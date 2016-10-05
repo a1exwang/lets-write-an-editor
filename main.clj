@@ -15,6 +15,7 @@
 (def KeyDown C-n)
 (def KeyLeft C-b)
 (def KeyRight C-f)
+(def Enter 13)
 
 (defn my-print [args]
   (let [s args]
@@ -48,14 +49,19 @@
     (.redirectError pb java.lang.ProcessBuilder$Redirect/INHERIT)
     (let [p (.start pb)]
       (.waitFor p))))
+(defn print-buf [buf]
+  (doseq [line buf]
+    (println (str line "\r"))))
+(defn adjust-cur [row col]
+  (my-print (csi (str (+ row 1) \; (+ col 1) \H))))
 
 ; adjust console to raw mode
 (mysh "/bin/stty" "-echo" "raw")
-
 (my-print ClearScreen)
 
-(loop []
+(loop [buf ["a"], cur-row 0, cur-col 0]
   (let [input (.read System/in)]
+    (my-print ClearScreen)
     (cond
       (= input KeyExit)
         (System/exit 0)
@@ -64,10 +70,26 @@
       (= input KeyDown)
         (my-print CursorDown)
       (= input KeyLeft)
-        (my-print CursorLeft)
+        (do 
+          (print-buf buf)
+          (adjust-cur cur-row (- cur-col 1))
+          (recur buf cur-row (- cur-col 1)))
       (= input KeyRight)
-        (my-print CursorRight)
+        (do 
+          (print-buf buf)
+          (adjust-cur cur-row (+ cur-col 1))
+          (recur buf cur-row (+ cur-col 1)))
+      (= input Enter)
+        (do
+          (let [new-buf (concat buf [""]), new-row (+ cur-row 1), new-col 0]
+            (print-buf new-buf)
+            (adjust-cur new-row new-col)
+            (recur new-buf new-row new-col)))
       :else 
-        (my-print (str (char input)))
-      ))
-  (recur))
+        (case (char input)
+          (let [line (nth buf cur-row), new-col (+ cur-col 1)]
+            (let [new-line (apply str (concat (take cur-col line) (cons (char input) (take-last (- (- (count line) cur-col) 1) line))))]
+              (let [new-buf (concat (take cur-row buf) (cons new-line (take-last (- (- (count  buf) cur-row) 1) buf)))]
+                (print-buf new-buf)
+                (adjust-cur cur-row new-col)
+                (recur new-buf cur-row new-col))))))))
